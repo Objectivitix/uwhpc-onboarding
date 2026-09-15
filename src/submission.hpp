@@ -12,21 +12,21 @@ class Grid {
 private:
   std::size_t rows_;
   std::size_t cols_;
-  std::vector<std::vector<double>> cells_;
+  std::vector<double> cells_;
 
 public:
   Grid(const std::size_t rows, const std::size_t cols)
     : rows_{rows}
     , cols_{cols}
-    , cells_(rows, std::vector<double>(cols, 0.0))
+    , cells_(rows * cols, 0.0)
   { }
 
   double& operator()(const std::size_t row, const std::size_t col) {
-    return cells_[row][col];
+    return cells_[row * cols_ + col];
   }
 
   double operator()(const std::size_t row, const std::size_t col) const {
-    return cells_[row][col];
+    return cells_[row * cols_ + col];
   }
 
   std::size_t rows() const { return rows_; }
