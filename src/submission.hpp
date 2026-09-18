@@ -1,45 +1,10 @@
 #pragma once
 
 #include <cstddef>
-#include <new>
 #include <vector>
 #include <immintrin.h>
 
 constexpr std::size_t VECTORIZED_COLUMN_STEP = sizeof(__m256d) / sizeof(double);
-
-template <typename T, std::size_t Alignment = 32>
-struct AlignedAllocator {
-  using value_type = T;
-
-  template <typename U>
-  struct rebind {
-    using other = AlignedAllocator<U, Alignment>;
-  };
-
-  AlignedAllocator() noexcept = default;
-
-  template <typename U>
-  AlignedAllocator(const AlignedAllocator<U, Alignment>&) noexcept {}
-
-  T* allocate(std::size_t n) {
-    void* ptr = ::operator new[](n * sizeof(T), std::align_val_t{Alignment});
-    return static_cast<T*>(ptr);
-  }
-
-  void deallocate(T* ptr, std::size_t) noexcept {
-    ::operator delete[](ptr, std::align_val_t{Alignment});
-  }
-};
-
-template <typename T, std::size_t Alignment>
-bool operator==(const AlignedAllocator<T, Alignment>&, const AlignedAllocator<T, Alignment>&) noexcept {
-  return true;
-}
-
-template <typename T, std::size_t Alignment>
-bool operator!=(const AlignedAllocator<T, Alignment>& lhs, const AlignedAllocator<T, Alignment>& rhs) noexcept {
-  return !(lhs == rhs);
-}
 
 // Starter Grid for the 2D heat-diffusion problem.
 //
@@ -50,23 +15,21 @@ class Grid {
 private:
   std::size_t rows_;
   std::size_t cols_;
-  std::size_t stride_;
-  std::vector<double, AlignedAllocator<double, 32>> cells_;
+  std::vector<double> cells_;
 
 public:
   Grid(const std::size_t rows, const std::size_t cols)
     : rows_{rows}
     , cols_{cols}
-    , stride_{(cols + VECTORIZED_COLUMN_STEP - 1) / VECTORIZED_COLUMN_STEP * VECTORIZED_COLUMN_STEP}
-    , cells_(rows * stride_, 0.0)
+    , cells_(rows * cols, 0.0)
   { }
 
   double& operator()(const std::size_t row, const std::size_t col) {
-    return cells_[row * stride_ + col];
+    return cells_[row * cols_ + col];
   }
 
   double operator()(const std::size_t row, const std::size_t col) const {
-    return cells_[row * stride_ + col];
+    return cells_[row * cols_ + col];
   }
 
   const double* data() const { return cells_.data(); }
@@ -74,7 +37,6 @@ public:
 
   std::size_t rows() const { return rows_; }
   std::size_t cols() const { return cols_; }
-  std::size_t stride() const { return stride_; }
 };
 
 // Apply the five-point stencil over all interior points, copying the boundary
@@ -85,7 +47,6 @@ void apply_stencil(const Grid& old_grid, Grid& new_grid) {
 
   const double* __restrict__ old_cells{old_grid.data()};
   double* __restrict__ new_cells{new_grid.data()};
-  const std::size_t stride{old_grid.stride()};
 
   __m256d _FOUR = _mm256_set1_pd(4.0);
   __m256d _EIGHTH = _mm256_set1_pd(0.125);
@@ -98,9 +59,9 @@ void apply_stencil(const Grid& old_grid, Grid& new_grid) {
       __m256d _above_plus_below, _left_plus_right;
       __m256d _all_around, _scaled_result, _final_result;
 
-      const std::size_t row_offset{row * stride};
-      const std::size_t above_offset{row_offset - stride};
-      const std::size_t below_offset{row_offset + stride};
+      const std::size_t row_offset{row * cols};
+      const std::size_t above_offset{row_offset - cols};
+      const std::size_t below_offset{row_offset + cols};
 
       for (std::size_t col{1}; col < cols - 1; col += VECTORIZED_COLUMN_STEP) {
         // each line below loads 4 packed 64-bit floating-point
