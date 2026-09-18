@@ -2,6 +2,9 @@
 
 #include <cstddef>
 #include <vector>
+#include <immintrin.h>
+
+constexpr std::size_t VECTORIZED_COLUMN_STEP = sizeof(__m256d) / sizeof(double);
 
 // Starter Grid for the 2D heat-diffusion problem.
 //
@@ -29,6 +32,10 @@ public:
     return cells_[row * cols_ + col];
   }
 
+  const double& get_for_simd(const std::size_t row, const std::size_t col) const {
+    return cells_[row * cols_ + col];
+  }
+
   std::size_t rows() const { return rows_; }
   std::size_t cols() const { return cols_; }
 };
@@ -39,6 +46,37 @@ void apply_stencil(const Grid& old_grid, Grid& new_grid) {
   const std::size_t rows{old_grid.rows()};
   const std::size_t cols{old_grid.cols()};
 
+  __m256d _FOUR = _mm256_set1_pd(4.0);
+  __m256d _EIGHTH = _mm256_set1_pd(0.125);
+
+  #pragma omp parallel for
+  for (std::size_t row = 1; row < rows - 1; ++row) {
+    __m256d _above, _below, _left, _right, _curr;
+    __m256d _above_plus_below, _left_plus_right;
+    __m256d _all_around, _scaled_result, _final_result;
+
+    for (std::size_t col{1}; col < cols - 1; col += VECTORIZED_COLUMN_STEP) {
+      // each line below loads 4 packed 64-bit floating-point
+      // values starting from an unaligned memory address
+      _above = _mm256_loadu_pd(&old_grid.get_for_simd(row - 1, col));
+      _below = _mm256_loadu_pd(&old_grid.get_for_simd(row + 1, col));
+      _left = _mm256_loadu_pd(&old_grid.get_for_simd(row, col - 1));
+      _right = _mm256_loadu_pd(&old_grid.get_for_simd(row, col + 1));
+      _curr = _mm256_loadu_pd(&old_grid.get_for_simd(row, col));
+
+      // calculate the weighted sums with as few hardware
+      // instructions as possible using fused multiply-add (FMA)
+      _above_plus_below = _mm256_add_pd(_above, _below);
+      _left_plus_right = _mm256_add_pd(_left, _right);
+      _all_around = _mm256_add_pd(_above_plus_below, _left_plus_right);
+      _scaled_result = _mm256_fmadd_pd(_curr, _FOUR, _all_around);
+      _final_result = _mm256_mul_pd(_scaled_result, _EIGHTH);
+
+      // store the sums (4 packed 64-bit floating-point values)
+      _mm256_storeu_pd(&new_grid(row, col), _final_result);
+    }
+  }
+
   for (std::size_t row{}; row < rows; ++row) {
     new_grid(row, 0) = old_grid(row, 0);
     new_grid(row, cols - 1) = old_grid(row, cols - 1);
@@ -47,20 +85,5 @@ void apply_stencil(const Grid& old_grid, Grid& new_grid) {
   for (std::size_t col{}; col < cols; ++col) {
     new_grid(0, col) = old_grid(0, col);
     new_grid(rows - 1, col) = old_grid(rows - 1, col);
-  }
-
-  #pragma omp parallel for
-  for (std::size_t row = 1; row < rows - 1; ++row) {
-    for (std::size_t col{1}; col < cols - 1; ++col) {
-      new_grid(row, col) = (
-        0.5 * old_grid(row, col)
-        + 0.125 * (
-          old_grid(row - 1, col)
-          + old_grid(row + 1, col)
-          + old_grid(row, col - 1)
-          + old_grid(row, col + 1)
-        )
-      );
-    }
   }
 }
