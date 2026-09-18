@@ -63,37 +63,25 @@ void apply_stencil(const Grid& old_grid, Grid& new_grid) {
       const std::size_t above_offset{row_offset - cols};
       const std::size_t below_offset{row_offset + cols};
 
-      // for (std::size_t col{1}; col < cols - 1; col += VECTORIZED_COLUMN_STEP) {
-      //   // each line below loads 4 packed 64-bit floating-point
-      //   // values starting from an unaligned memory address
-      //   _above = _mm256_loadu_pd(old_cells + above_offset + col);
-      //   _below = _mm256_loadu_pd(old_cells + below_offset + col);
-      //   _left = _mm256_loadu_pd(old_cells + row_offset + col - 1);
-      //   _right = _mm256_loadu_pd(old_cells + row_offset + col + 1);
-      //   _curr = _mm256_loadu_pd(old_cells + row_offset + col);
+      for (std::size_t col{1}; col < cols - 1; col += VECTORIZED_COLUMN_STEP) {
+        // each line below loads 4 packed 64-bit floating-point
+        // values starting from an unaligned memory address
+        _above = _mm256_loadu_pd(old_cells + above_offset + col);
+        _below = _mm256_loadu_pd(old_cells + below_offset + col);
+        _left = _mm256_loadu_pd(old_cells + row_offset + col - 1);
+        _right = _mm256_loadu_pd(old_cells + row_offset + col + 1);
+        _curr = _mm256_loadu_pd(old_cells + row_offset + col);
 
-      //   // calculate the weighted sums with as few hardware
-      //   // instructions as possible using fused multiply-add (FMA)
-      //   _above_plus_below = _mm256_add_pd(_above, _below);
-      //   _left_plus_right = _mm256_add_pd(_left, _right);
-      //   _all_around = _mm256_add_pd(_above_plus_below, _left_plus_right);
-      //   _scaled_result = _mm256_fmadd_pd(_curr, _FOUR, _all_around);
-      //   _final_result = _mm256_mul_pd(_scaled_result, _EIGHTH);
+        // calculate the weighted sums with as few hardware
+        // instructions as possible using fused multiply-add (FMA)
+        _above_plus_below = _mm256_add_pd(_above, _below);
+        _left_plus_right = _mm256_add_pd(_left, _right);
+        _all_around = _mm256_add_pd(_above_plus_below, _left_plus_right);
+        _scaled_result = _mm256_fmadd_pd(_curr, _FOUR, _all_around);
+        _final_result = _mm256_mul_pd(_scaled_result, _EIGHTH);
 
-      //   // store the sums (4 packed 64-bit floating-point values)
-      //   _mm256_storeu_pd(new_cells + row_offset + col, _final_result);
-      // }
-
-      for (std::size_t col{1}; col < cols - 1; ++col) {
-        new_cells[row_offset + col] = (
-          0.5 * old_cells[row_offset + col]
-          + 0.125 * (
-            old_cells[above_offset + col]
-            + old_cells[below_offset + col]
-            + old_cells[row_offset + col - 1]
-            + old_cells[row_offset + col + 1]
-          )
-        );
+        // store the sums (4 packed 64-bit floating-point values)
+        _mm256_storeu_pd(new_cells + row_offset + col, _final_result);
       }
     }
 
