@@ -32,9 +32,8 @@ public:
     return cells_[row * cols_ + col];
   }
 
-  const double& get_for_simd(const std::size_t row, const std::size_t col) const {
-    return cells_[row * cols_ + col];
-  }
+  const double* data() const { return cells_.data(); }
+  double* data() { return cells_.data(); }
 
   std::size_t rows() const { return rows_; }
   std::size_t cols() const { return cols_; }
@@ -45,6 +44,9 @@ public:
 void apply_stencil(const Grid& old_grid, Grid& new_grid) {
   const std::size_t rows{old_grid.rows()};
   const std::size_t cols{old_grid.cols()};
+
+  const double* old_cells{old_grid.data()};
+  double* new_cells{new_grid.data()};
 
   __m256d _FOUR = _mm256_set1_pd(4.0);
   __m256d _EIGHTH = _mm256_set1_pd(0.125);
@@ -57,14 +59,18 @@ void apply_stencil(const Grid& old_grid, Grid& new_grid) {
       __m256d _above_plus_below, _left_plus_right;
       __m256d _all_around, _scaled_result, _final_result;
 
+      const std::size_t row_offset{row * cols};
+      const std::size_t above_offset{row_offset - cols};
+      const std::size_t below_offset{row_offset + cols};
+
       for (std::size_t col{1}; col < cols - 1; col += VECTORIZED_COLUMN_STEP) {
         // each line below loads 4 packed 64-bit floating-point
         // values starting from an unaligned memory address
-        _above = _mm256_loadu_pd(&old_grid.get_for_simd(row - 1, col));
-        _below = _mm256_loadu_pd(&old_grid.get_for_simd(row + 1, col));
-        _left = _mm256_loadu_pd(&old_grid.get_for_simd(row, col - 1));
-        _right = _mm256_loadu_pd(&old_grid.get_for_simd(row, col + 1));
-        _curr = _mm256_loadu_pd(&old_grid.get_for_simd(row, col));
+        _above = _mm256_loadu_pd(old_cells + above_offset + col);
+        _below = _mm256_loadu_pd(old_cells + below_offset + col);
+        _left = _mm256_loadu_pd(old_cells + row_offset + col - 1);
+        _right = _mm256_loadu_pd(old_cells + row_offset + col + 1);
+        _curr = _mm256_loadu_pd(old_cells + row_offset + col);
 
         // calculate the weighted sums with as few hardware
         // instructions as possible using fused multiply-add (FMA)
@@ -75,7 +81,7 @@ void apply_stencil(const Grid& old_grid, Grid& new_grid) {
         _final_result = _mm256_mul_pd(_scaled_result, _EIGHTH);
 
         // store the sums (4 packed 64-bit floating-point values)
-        _mm256_storeu_pd(&new_grid(row, col), _final_result);
+        _mm256_storeu_pd(new_cells + row_offset + col, _final_result);
       }
     }
 
