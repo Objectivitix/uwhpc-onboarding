@@ -1,7 +1,6 @@
 #pragma once
 
 #include <cstddef>
-#include <vector>
 #include <immintrin.h>
 
 constexpr std::size_t VECTORIZED_COLUMN_STEP = sizeof(__m256d) / sizeof(double);
@@ -15,14 +14,16 @@ class Grid {
 private:
   std::size_t rows_;
   std::size_t cols_;
-  std::vector<double> cells_;
+  double* cells_;
 
 public:
   Grid(const std::size_t rows, const std::size_t cols)
     : rows_{rows}
     , cols_{cols}
-    , cells_(rows * cols, 0.0)
+    , cells_{new double[rows * cols]{}}
   { }
+
+  ~Grid() { delete[] cells_; }
 
   double& operator()(const std::size_t row, const std::size_t col) {
     return cells_[row * cols_ + col];
@@ -32,8 +33,8 @@ public:
     return cells_[row * cols_ + col];
   }
 
-  const double* data() const { return cells_.data(); }
-  double* data() { return cells_.data(); }
+  const double* cells() const { return cells_; }
+  double* cells() { return cells_; }
 
   std::size_t rows() const { return rows_; }
   std::size_t cols() const { return cols_; }
@@ -45,8 +46,8 @@ void apply_stencil(const Grid& old_grid, Grid& new_grid) {
   const std::size_t rows{old_grid.rows()};
   const std::size_t cols{old_grid.cols()};
 
-  const double* __restrict__ old_cells{old_grid.data()};
-  double* __restrict__ new_cells{new_grid.data()};
+  const double* __restrict__ old_cells{old_grid.cells()};
+  double* __restrict__ new_cells{new_grid.cells()};
 
   __m256d _FOUR = _mm256_set1_pd(4.0);
   __m256d _EIGHTH = _mm256_set1_pd(0.125);
