@@ -45,8 +45,8 @@ void apply_stencil(const Grid& old_grid, Grid& new_grid) {
   const std::size_t rows{old_grid.rows()};
   const std::size_t cols{old_grid.cols()};
 
-  const double* old_cells{old_grid.data()};
-  double* new_cells{new_grid.data()};
+  const double* __restrict__ old_cells{old_grid.data()};
+  double* __restrict__ new_cells{new_grid.data()};
 
   __m256d _FOUR = _mm256_set1_pd(4.0);
   __m256d _EIGHTH = _mm256_set1_pd(0.125);
